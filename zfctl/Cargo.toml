@@ -48,5 +48,6 @@ uuid = { workspace = true, features = ["serde", "v4"] }
 zenoh = { workspace = true }
 zenoh-flow-commons = { workspace = true }
 zenoh-flow-daemon = { workspace = true }
+zenoh-flow-runtime = { workspace = true }
 zenoh-flow-descriptors = { workspace = true }
 zenoh-util = { workspace = true }

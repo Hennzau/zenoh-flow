@@ -3869,5 +3869,6 @@ dependencies = [
  "zenoh-flow-commons",
  "zenoh-flow-daemon",
  "zenoh-flow-descriptors",
+ "zenoh-flow-runtime",
  "zenoh-util",
 ]
