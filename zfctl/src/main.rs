@@ -123,6 +123,6 @@ async fn main() -> Result<()> {
 
             command.run(session, orchestrator_id).await
         }
-        Command::Runtime(command) => command.run(&session).await,
+        Command::Runtime(command) => command.run(session).await,
     }
 }

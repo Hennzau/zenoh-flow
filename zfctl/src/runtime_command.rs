@@ -12,14 +12,23 @@
 //   ZettaScale Zenoh Team, <zenoh@zettascale.tech>
 //
 
-use std::time::Duration;
+use std::{path::PathBuf, time::Duration};
 
-use anyhow::anyhow;
-use clap::Subcommand;
+use anyhow::{anyhow, Context};
+use async_std::{io::ReadExt, stream::StreamExt};
+use clap::{ArgGroup, Subcommand};
 use comfy_table::{Row, Table};
+use signal_hook::consts::{SIGINT, SIGQUIT, SIGTERM};
+use signal_hook_async_std::Signals;
 use zenoh::prelude::r#async::*;
-use zenoh_flow_commons::{Result, RuntimeId};
-use zenoh_flow_daemon::queries::*;
+use zenoh_flow_commons::{parse_vars, try_parse_from_file, Result, RuntimeId, Vars};
+use zenoh_flow_daemon::{
+    daemon::{Daemon, ZenohFlowConfiguration},
+    queries::*,
+};
+use zenoh_flow_descriptors::{DataFlowDescriptor, FlattenedDataFlowDescriptor};
+use zenoh_flow_records::DataFlowRecord;
+use zenoh_flow_runtime::{Extensions, Runtime};
 
 use super::row;
 use crate::{
@@ -57,13 +66,66 @@ pub(crate) enum RuntimeCommand {
         #[arg(short = 'n', long = "name", group = "runtime")]
         runtime_name: Option<String>,
     },
+
+    /// Launch a Zenoh-Flow runtime with a Data Flow in standalone mode.
+    #[command(verbatim_doc_comment)]
+    RunStandalone {
+        /// The data flow to execute.
+        flow: PathBuf,
+        /// The, optional, location of the configuration to load nodes implemented not in Rust.
+        #[arg(short, long, value_name = "path")]
+        extensions: Option<PathBuf>,
+        /// Variables to add / overwrite in the `vars` section of your data
+        /// flow, with the form `KEY=VALUE`. Can be repeated multiple times.
+        ///
+        /// Example:
+        ///     --vars HOME_DIR=/home/zenoh-flow --vars BUILD=debug
+        #[arg(long, value_parser = parse_vars::<String, String>, verbatim_doc_comment)]
+        vars: Option<Vec<(String, String)>>,
+        /// The path to a Zenoh configuration to manage the connection to the Zenoh
+        /// network.
+        ///
+        /// If no configuration is provided, `zfctl` will default to connecting as
+        /// a peer with multicast scouting enabled.
+        #[arg(short = 'z', long, verbatim_doc_comment)]
+        zenoh_configuration: Option<PathBuf>,
+    },
+
+    /// Launch a Zenoh-Flow runtime with a Data Flow through a Zenoh-Flow daemon.
+    #[command(verbatim_doc_comment)]
+    #[command(group(
+        ArgGroup::new("exclusive")
+            .args(&["name", "configuration"])
+            .required(true)
+            .multiple(false)
+    ))]
+    Run {
+        /// The human-readable name to give the Zenoh-Flow Runtime wrapped by this
+        /// Daemon.
+        ///
+        /// To start a Zenoh-Flow Daemon, at least a name is required.
+        name: Option<String>,
+        /// The path of the configuration of the Zenoh-Flow Daemon.
+        ///
+        /// This configuration allows setting extensions supported by the Runtime
+        /// and its name.
+        #[arg(short, long, verbatim_doc_comment)]
+        configuration: Option<PathBuf>,
+        /// The path to a Zenoh configuration to manage the connection to the Zenoh
+        /// network.
+        ///
+        /// If no configuration is provided, `zfctl` will default to connecting as
+        /// a peer with multicast scouting enabled.
+        #[arg(short = 'z', long, verbatim_doc_comment)]
+        zenoh_configuration: Option<PathBuf>,
+    },
 }
 
 impl RuntimeCommand {
-    pub async fn run(self, session: &Session) -> Result<()> {
+    pub async fn run(self, session: Session) -> Result<()> {
         match self {
             RuntimeCommand::List => {
-                let runtimes = get_all_runtimes(session).await;
+                let runtimes = get_all_runtimes(&session).await;
 
                 let mut table = Table::new();
                 table.set_width(80);
@@ -81,7 +143,7 @@ impl RuntimeCommand {
             } => {
                 let runtime_id = match (runtime_id, runtime_name) {
                     (Some(id), _) => id,
-                    (None, Some(name)) => get_runtime_by_name(session, &name).await,
+                    (None, Some(name)) => get_runtime_by_name(&session, &name).await,
                     (None, None) => {
                         // This code is indeed unreachable because:
                         // (1) The `group` macro has `required = true` which indicates that clap requires an entry for
@@ -173,6 +235,193 @@ impl RuntimeCommand {
                         Err(e) => tracing::error!("Reply to runtime status failed with: {:?}", e),
                     }
                 }
+            }
+            RuntimeCommand::RunStandalone {
+                flow,
+                extensions,
+                vars,
+                zenoh_configuration,
+            } => {
+                let extensions = match extensions {
+                    Some(extensions_path) => {
+                        let (extensions, _) =
+                            zenoh_flow_commons::try_parse_from_file::<Extensions>(
+                                extensions_path.as_os_str(),
+                                Vars::default(),
+                            )
+                            .context(format!(
+                                "Failed to load Loader configuration from < {} >",
+                                &extensions_path.display()
+                            ))
+                            .unwrap();
+
+                        extensions
+                    }
+                    None => Extensions::default(),
+                };
+
+                let vars = match vars {
+                    Some(v) => Vars::from(v),
+                    None => Vars::default(),
+                };
+
+                let (data_flow, vars) =
+                    zenoh_flow_commons::try_parse_from_file::<DataFlowDescriptor>(
+                        flow.as_os_str(),
+                        vars,
+                    )
+                    .context(format!(
+                        "Failed to load data flow descriptor from < {} >",
+                        &flow.display()
+                    ))
+                    .unwrap();
+
+                let flattened_flow = FlattenedDataFlowDescriptor::try_flatten(data_flow, vars)
+                    .context(format!(
+                        "Failed to flattened data flow extracted from < {} >",
+                        &flow.display()
+                    ))
+                    .unwrap();
+
+                let mut runtime_builder = Runtime::builder("zenoh-flow-standalone-runtime")
+                    .add_extensions(extensions)
+                    .expect("Failed to add extensions")
+                    .session(session.into_arc());
+
+                if let Some(path) = zenoh_configuration {
+                    let zenoh_config = zenoh_flow_runtime::zenoh::Config::from_file(path.clone())
+                        .unwrap_or_else(|e| {
+                            panic!(
+                                "Failed to parse the Zenoh configuration from < {} >:\n{e:?}",
+                                path.display()
+                            )
+                        });
+                    let zenoh_session = zenoh_flow_runtime::zenoh::open(zenoh_config)
+                        .res_async()
+                        .await
+                        .unwrap_or_else(|e| panic!("Failed to open a Zenoh session: {e:?}"))
+                        .into_arc();
+
+                    runtime_builder = runtime_builder.session(zenoh_session);
+                }
+
+                let runtime = runtime_builder
+                    .build()
+                    .await
+                    .expect("Failed to build the Zenoh-Flow runtime");
+
+                let record = DataFlowRecord::try_new(&flattened_flow, runtime.id())
+                    .context("Failed to create a Record from the flattened data flow descriptor")
+                    .unwrap();
+
+                let instance_id = record.instance_id().clone();
+                let record_name = record.name().clone();
+                runtime
+                    .try_load_data_flow(record)
+                    .await
+                    .context("Failed to load Record")
+                    .unwrap();
+
+                runtime
+                    .try_start_instance(&instance_id)
+                    .await
+                    .unwrap_or_else(|e| {
+                        panic!("Failed to start data flow < {} >: {:?}", &instance_id, e)
+                    });
+
+                let mut stdin = async_std::io::stdin();
+                let mut input = [0_u8];
+                println!(
+                    r#"
+                The flow ({}) < {} > was successfully started.
+
+                To abort its execution, simply enter 'q'.
+                "#,
+                    record_name, instance_id
+                );
+
+                loop {
+                    let _ = stdin.read_exact(&mut input).await;
+                    if input[0] == b'q' {
+                        break;
+                    }
+                }
+
+                runtime
+                    .try_delete_instance(&instance_id)
+                    .await
+                    .unwrap_or_else(|e| {
+                        panic!("Failed to delete data flow < {} >: {:?}", &instance_id, e)
+                    });
+            }
+            RuntimeCommand::Run {
+                name,
+                configuration,
+                zenoh_configuration,
+            } => {
+                let zenoh_config = match zenoh_configuration {
+                    Some(path) => {
+                        zenoh::prelude::Config::from_file(path.clone()).unwrap_or_else(|e| {
+                            panic!(
+                                "Failed to parse the Zenoh configuration from < {} >:\n{e:?}",
+                                path.display()
+                            )
+                        })
+                    }
+                    None => zenoh::config::peer(),
+                };
+
+                let zenoh_session = zenoh::open(zenoh_config)
+                    .res_async()
+                    .await
+                    .unwrap_or_else(|e| panic!("Failed to open Zenoh session:\n{e:?}"))
+                    .into_arc();
+
+                let daemon = match configuration {
+                    Some(path) => {
+                        let (zenoh_flow_configuration, _) =
+                            try_parse_from_file::<ZenohFlowConfiguration>(&path, Vars::default())
+                                .unwrap_or_else(|e| {
+                                    panic!(
+                                "Failed to parse a Zenoh-Flow Configuration from < {} >:\n{e:?}",
+                                path.display()
+                            )
+                                });
+
+                        Daemon::spawn_from_config(zenoh_session, zenoh_flow_configuration)
+                            .await
+                            .expect("Failed to spawn the Zenoh-Flow Daemon")
+                    }
+                    None => Daemon::spawn(
+                        Runtime::builder(name.unwrap())
+                            .session(zenoh_session)
+                            .build()
+                            .await
+                            .expect("Failed to build the Zenoh-Flow Runtime"),
+                    )
+                    .await
+                    .expect("Failed to spawn the Zenoh-Flow Daemon"),
+                };
+
+                async_std::task::spawn(async move {
+                    let mut signals = Signals::new([SIGTERM, SIGINT, SIGQUIT])
+                        .expect("Failed to create SignalsInfo for: [SIGTERM, SIGINT, SIGQUIT]");
+
+                    while let Some(signal) = signals.next().await {
+                        match signal {
+                            SIGTERM | SIGINT | SIGQUIT => {
+                                tracing::info!("Received termination signal, shutting down.");
+                                daemon.stop().await;
+                                break;
+                            }
+
+                            signal => {
+                                tracing::warn!("Ignoring signal ({signal})");
+                            }
+                        }
+                    }
+                })
+                .await;
             }
         }
 

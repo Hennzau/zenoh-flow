@@ -32,6 +32,8 @@ bytesize = { workspace = true }
 clap = { workspace = true, features = ["derive", "wrap_help"] }
 comfy-table = "7.1.0"
 derive_more = "0.99.10"
+signal-hook = "0.3"
+signal-hook-async-std = "0.2"
 dirs = "5.0"
 git-version = { workspace = true }
 itertools = "0.12"
@@ -48,6 +50,7 @@ uuid = { workspace = true, features = ["serde", "v4"] }
 zenoh = { workspace = true }
 zenoh-flow-commons = { workspace = true }
 zenoh-flow-daemon = { workspace = true }
+zenoh-flow-records = { workspace = true }
 zenoh-flow-runtime = { workspace = true }
 zenoh-flow-descriptors = { workspace = true }
 zenoh-util = { workspace = true }
