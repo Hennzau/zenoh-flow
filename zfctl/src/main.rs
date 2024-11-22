@@ -18,6 +18,9 @@ use instance_command::InstanceCommand;
 mod runtime_command;
 use runtime_command::RuntimeCommand;
 
+mod daemon_command;
+use daemon_command::DaemonCommand;
+
 mod utils;
 use std::path::PathBuf;
 
@@ -82,6 +85,10 @@ enum Command {
     /// To interact with a Zenoh-Flow runtime.
     #[command(subcommand)]
     Runtime(RuntimeCommand),
+
+    /// To interact with the Zenoh-Flow daemon.
+    #[command(subcommand)]
+    Daemon(DaemonCommand),
 }
 
 #[async_std::main]
@@ -124,5 +131,6 @@ async fn main() -> Result<()> {
             command.run(session, orchestrator_id).await
         }
         Command::Runtime(command) => command.run(session).await,
+        Command::Daemon(command) => command.run(session).await,
     }
 }

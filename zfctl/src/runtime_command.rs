@@ -15,17 +15,13 @@
 use std::{path::PathBuf, time::Duration};
 
 use anyhow::{anyhow, Context};
-use async_std::{io::ReadExt, stream::StreamExt};
-use clap::{ArgGroup, Subcommand};
+use async_std::io::ReadExt;
+use clap::Subcommand;
 use comfy_table::{Row, Table};
-use signal_hook::consts::{SIGINT, SIGQUIT, SIGTERM};
-use signal_hook_async_std::Signals;
+
 use zenoh::prelude::r#async::*;
-use zenoh_flow_commons::{parse_vars, try_parse_from_file, Result, RuntimeId, Vars};
-use zenoh_flow_daemon::{
-    daemon::{Daemon, ZenohFlowConfiguration},
-    queries::*,
-};
+use zenoh_flow_commons::{parse_vars, Result, RuntimeId, Vars};
+use zenoh_flow_daemon::queries::*;
 use zenoh_flow_descriptors::{DataFlowDescriptor, FlattenedDataFlowDescriptor};
 use zenoh_flow_records::DataFlowRecord;
 use zenoh_flow_runtime::{Extensions, Runtime};
@@ -67,9 +63,9 @@ pub(crate) enum RuntimeCommand {
         runtime_name: Option<String>,
     },
 
-    /// Launch a Zenoh-Flow runtime with a Data Flow in standalone mode.
+    /// Launch a Zenoh-Flow runtime with a DataFlow in standalone mode.
     #[command(verbatim_doc_comment)]
-    RunStandalone {
+    Run {
         /// The data flow to execute.
         flow: PathBuf,
         /// The, optional, location of the configuration to load nodes implemented not in Rust.
@@ -82,35 +78,6 @@ pub(crate) enum RuntimeCommand {
         ///     --vars HOME_DIR=/home/zenoh-flow --vars BUILD=debug
         #[arg(long, value_parser = parse_vars::<String, String>, verbatim_doc_comment)]
         vars: Option<Vec<(String, String)>>,
-        /// The path to a Zenoh configuration to manage the connection to the Zenoh
-        /// network.
-        ///
-        /// If no configuration is provided, `zfctl` will default to connecting as
-        /// a peer with multicast scouting enabled.
-        #[arg(short = 'z', long, verbatim_doc_comment)]
-        zenoh_configuration: Option<PathBuf>,
-    },
-
-    /// Launch a Zenoh-Flow runtime with a Data Flow through a Zenoh-Flow daemon.
-    #[command(verbatim_doc_comment)]
-    #[command(group(
-        ArgGroup::new("exclusive")
-            .args(&["name", "configuration"])
-            .required(true)
-            .multiple(false)
-    ))]
-    Run {
-        /// The human-readable name to give the Zenoh-Flow Runtime wrapped by this
-        /// Daemon.
-        ///
-        /// To start a Zenoh-Flow Daemon, at least a name is required.
-        name: Option<String>,
-        /// The path of the configuration of the Zenoh-Flow Daemon.
-        ///
-        /// This configuration allows setting extensions supported by the Runtime
-        /// and its name.
-        #[arg(short, long, verbatim_doc_comment)]
-        configuration: Option<PathBuf>,
         /// The path to a Zenoh configuration to manage the connection to the Zenoh
         /// network.
         ///
@@ -236,7 +203,7 @@ impl RuntimeCommand {
                     }
                 }
             }
-            RuntimeCommand::RunStandalone {
+            RuntimeCommand::Run {
                 flow,
                 extensions,
                 vars,
@@ -353,75 +320,6 @@ impl RuntimeCommand {
                     .unwrap_or_else(|e| {
                         panic!("Failed to delete data flow < {} >: {:?}", &instance_id, e)
                     });
-            }
-            RuntimeCommand::Run {
-                name,
-                configuration,
-                zenoh_configuration,
-            } => {
-                let zenoh_config = match zenoh_configuration {
-                    Some(path) => {
-                        zenoh::prelude::Config::from_file(path.clone()).unwrap_or_else(|e| {
-                            panic!(
-                                "Failed to parse the Zenoh configuration from < {} >:\n{e:?}",
-                                path.display()
-                            )
-                        })
-                    }
-                    None => zenoh::config::peer(),
-                };
-
-                let zenoh_session = zenoh::open(zenoh_config)
-                    .res_async()
-                    .await
-                    .unwrap_or_else(|e| panic!("Failed to open Zenoh session:\n{e:?}"))
-                    .into_arc();
-
-                let daemon = match configuration {
-                    Some(path) => {
-                        let (zenoh_flow_configuration, _) =
-                            try_parse_from_file::<ZenohFlowConfiguration>(&path, Vars::default())
-                                .unwrap_or_else(|e| {
-                                    panic!(
-                                "Failed to parse a Zenoh-Flow Configuration from < {} >:\n{e:?}",
-                                path.display()
-                            )
-                                });
-
-                        Daemon::spawn_from_config(zenoh_session, zenoh_flow_configuration)
-                            .await
-                            .expect("Failed to spawn the Zenoh-Flow Daemon")
-                    }
-                    None => Daemon::spawn(
-                        Runtime::builder(name.unwrap())
-                            .session(zenoh_session)
-                            .build()
-                            .await
-                            .expect("Failed to build the Zenoh-Flow Runtime"),
-                    )
-                    .await
-                    .expect("Failed to spawn the Zenoh-Flow Daemon"),
-                };
-
-                async_std::task::spawn(async move {
-                    let mut signals = Signals::new([SIGTERM, SIGINT, SIGQUIT])
-                        .expect("Failed to create SignalsInfo for: [SIGTERM, SIGINT, SIGQUIT]");
-
-                    while let Some(signal) = signals.next().await {
-                        match signal {
-                            SIGTERM | SIGINT | SIGQUIT => {
-                                tracing::info!("Received termination signal, shutting down.");
-                                daemon.stop().await;
-                                break;
-                            }
-
-                            signal => {
-                                tracing::warn!("Ignoring signal ({signal})");
-                            }
-                        }
-                    }
-                })
-                .await;
             }
         }
 
