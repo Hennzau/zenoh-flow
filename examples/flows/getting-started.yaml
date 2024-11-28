@@ -15,9 +15,9 @@
 name: getting-started
 
 vars:
-  TARGET_DIR: "/path/to/zenoh-flow/target"
+  TARGET_DIR: "/Users/enzolevan/Offline/zenoh-flow/target"
   BUILD: "debug"
-  DLL_EXTENSION: "so"
+  DLL_EXTENSION: "dylib"
   OUT_FILE: "/tmp/greetings.txt"
 
 sources:
