@@ -16,7 +16,10 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, bail};
 use async_std::sync::Mutex;
-use zenoh::{prelude::r#async::*, subscriber::FlumeSubscriber};
+use zenoh::{
+    handlers::FifoChannelHandler, key_expr::OwnedKeyExpr, pubsub::Subscriber, sample::Sample,
+    Session,
+};
 #[cfg(feature = "shared-memory")]
 use zenoh_flow_commons::SharedMemoryConfiguration;
 use zenoh_flow_commons::{NodeId, Result};
@@ -134,7 +137,6 @@ Caused by:
 
                     self.session
                         .put(&self.key_expr, message_buffer)
-                        .res()
                         .await
                         .map_err(|e| {
                             anyhow!(
@@ -174,7 +176,7 @@ pub(crate) struct ZenohConnectorReceiver {
     pub(crate) id: NodeId,
     pub(crate) key_expr: OwnedKeyExpr,
     pub(crate) output_raw: OutputRaw,
-    pub(crate) subscriber: FlumeSubscriber<'static>,
+    pub(crate) subscriber: Subscriber<FifoChannelHandler<Sample>>,
 }
 
 impl ZenohConnectorReceiver {
@@ -185,14 +187,12 @@ impl ZenohConnectorReceiver {
     ) -> Result<Self> {
         let ke = session
             .declare_keyexpr(record.resource())
-            .res()
             .await
             // TODO@J-Loudet
             .map_err(|e| anyhow!("{:?}", e))?;
 
         let subscriber = session
             .declare_subscriber(ke)
-            .res()
             .await
             // TODO@J-Loudet
             .map_err(|e| anyhow!("{:?}", e))?;
@@ -217,7 +217,7 @@ impl Node for ZenohConnectorReceiver {
     async fn iteration(&self) -> Result<()> {
         match self.subscriber.recv_async().await {
             Ok(message) => {
-                let de: LinkMessage = bincode::deserialize(&message.value.payload.contiguous())?;
+                let de: LinkMessage = bincode::deserialize(&message.payload().to_bytes())?;
 
                 self.output_raw.forward(de).await
             }

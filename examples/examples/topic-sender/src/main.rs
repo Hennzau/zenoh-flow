@@ -3,10 +3,7 @@ use std::path::PathBuf;
 use anyhow::anyhow;
 use clap::Parser;
 
-use zenoh::{
-    prelude::{r#async::AsyncResolve, *},
-    Result,
-};
+use zenoh::{key_expr::KeyExpr, Result};
 
 #[derive(Parser)]
 struct TopicSender {
@@ -27,28 +24,26 @@ struct TopicSender {
     payload: String,
 }
 
-#[async_std::main]
+#[tokio::main]
 async fn main() -> Result<()> {
     let args = TopicSender::parse();
 
     let zenoh_config = match args.zenoh_configuration {
-        Some(path) => zenoh::prelude::Config::from_file(path.clone()).map_err(|e| {
+        Some(path) => zenoh::config::Config::from_file(path.clone()).map_err(|e| {
             anyhow!(
                 "Failed to parse the Zenoh configuration from < {} >:\n{e:?}",
                 path.display()
             )
         })?,
-        None => zenoh::config::peer(),
+        None => zenoh::config::Config::default(),
     };
 
     let session = zenoh::open(zenoh_config)
-        .res()
         .await
         .map_err(|e| anyhow!("Failed to open Zenoh session:\n{:?}", e))?;
 
     session
         .put(&args.key_expression, args.payload)
-        .res()
         .await
         .map_err(|e| anyhow!("Failed to put a sample:\n{:?}", e))?;
 

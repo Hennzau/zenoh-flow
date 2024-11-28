@@ -17,7 +17,8 @@ use std::{fmt::Display, ops::Deref, str::FromStr, sync::Arc};
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use zenoh_protocol::core::ZenohId;
+use zenoh_config::wrappers::ZenohId;
+use zenoh_protocol::core::ZenohIdProto;
 
 use crate::deserialize::deserialize_id;
 
@@ -119,7 +120,7 @@ impl RuntimeId {
     ///
     /// This internally calls [ZenohId::rand].
     pub fn rand() -> Self {
-        Self(ZenohId::rand())
+        Self(ZenohId::from(ZenohIdProto::rand()))
     }
 }
 

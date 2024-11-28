@@ -17,7 +17,7 @@ use std::{collections::HashMap, pin::Pin, sync::Arc};
 use anyhow::{anyhow, Context as ac};
 use async_std::sync::Mutex;
 use futures::{future::select_all, Future};
-use zenoh::{prelude::r#async::*, sample::Sample, subscriber::FlumeSubscriber, Session};
+use zenoh::{key_expr::OwnedKeyExpr, sample::Sample, Session};
 use zenoh_flow_commons::{NodeId, PortId, Result};
 use zenoh_flow_nodes::prelude::{Node, OutputRaw, Outputs};
 
@@ -130,8 +130,8 @@ Caused by:
 
         match result {
             Ok(sample) => {
-                let data = sample.payload.contiguous().to_vec();
-                let ke = sample.key_expr;
+                let data = sample.payload().to_bytes().to_vec();
+                let ke = sample.key_expr();
                 tracing::trace!("received subscription on {ke}");
                 let output = self.outputs.get(&id).ok_or(anyhow!(
                     "{}: internal error, unable to find output < {} >",

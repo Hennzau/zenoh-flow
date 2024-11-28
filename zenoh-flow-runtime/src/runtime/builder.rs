@@ -16,8 +16,8 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use async_std::sync::{Mutex, RwLock};
 use uhlc::HLC;
+use zenoh::Session;
 #[cfg(feature = "zenoh")]
-use zenoh::prelude::r#async::*;
 #[cfg(feature = "shared-memory")]
 use zenoh_flow_commons::SharedMemoryConfiguration;
 use zenoh_flow_commons::{Result, RuntimeId};
@@ -233,20 +233,16 @@ impl RuntimeBuilder {
         let session = match self.session {
             Some(session) => session,
             None => {
-                let mut zenoh_config = zenoh::config::peer();
+                let mut zenoh_config = zenoh::config::Config::default();
                 if let Some(runtime_id) = self.runtime_id {
                     // NOTE: `set_id` will return the previous id in one was set before. We can safely ignore this
                     // result.
                     let _ = zenoh_config.set_id(*runtime_id);
                 }
 
-                zenoh::open(zenoh_config)
-                    .res_async()
-                    .await
-                    .map_err(|e| {
-                        anyhow::anyhow!("Failed to open a Zenoh session in peer mode:\n{e:?}")
-                    })?
-                    .into_arc()
+                Arc::new(zenoh::open(zenoh_config).await.map_err(|e| {
+                    anyhow::anyhow!("Failed to open a Zenoh session in peer mode:\n{e:?}")
+                })?)
             }
         };
 
