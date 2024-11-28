@@ -3337,9 +3337,12 @@ dependencies = [
 name = "zenoh-flow-examples"
 version = "0.6.0-dev"
 dependencies = [
+ "anyhow",
  "async-std",
  "async-trait",
+ "clap",
  "prost 0.11.9",
+ "zenoh",
  "zenoh-flow-nodes",
 ]
 

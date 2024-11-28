@@ -29,6 +29,11 @@ async-trait = { workspace = true }
 prost = "0.11"
 zenoh-flow-nodes = { workspace = true }
 
+[dev-dependencies]
+zenoh = { workspace = true }
+clap = { workspace = true, features = ["derive", "wrap_help"] }
+anyhow = { workspace = true }
+
 [[example]]
 name = "greetings-maker"
 path = "examples/greetings-maker/src/lib.rs"
@@ -38,3 +43,7 @@ crate-type = ["cdylib"]
 name = "file-writer"
 path = "examples/file-writer/src/lib.rs"
 crate-type = ["cdylib"]
+
+[[example]]
+name = "topic-sender"
+path = "examples/topic-sender/src/main.rs"
