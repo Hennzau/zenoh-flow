@@ -38,42 +38,42 @@ repository = "https://github.com/eclipse-zenoh/zenoh-flow"
 version = "0.6.0-dev"
 
 [workspace.dependencies]
-anyhow = "1"
-async-std = { version = "1.12", features = ["attributes"] }
-async-trait = "0.1.50"
-base64 = "0.21"
+anyhow = "1.0.89"
+async-std = { version = "1.6.5", features = ["attributes"] }
+async-trait = "0.1.82"
+base64 = "0.22.1"
 bytesize = "1.2.0"
-clap = { version = "4.4", features = ["derive"] }
+clap = { version = "4.5.17", features = ["derive"] }
 flume = "0.11"
-futures = "0.3.15"
-git-version = "0.3"
+futures = "0.3.30"
+git-version = "0.3.9"
 log = "0.4"
-serde = { version = "1.0", features = ["derive", "rc"] }
+serde = { version = "1.0.210", features = ["derive", "rc"] }
 serde_cbor = "0.11"
 serde_derive = "1.0"
-serde_json = "1.0"
-serde_yaml = "0.9"
+serde_json = "1.0.128"
+serde_yaml = "0.9.34"
 tracing = { version = "0.1", features = ["log"] }
 tracing-subscriber = { version = "0.3" }
-uhlc = "0.6"
-url = { version = "2.2", features = ["serde"] }
-uuid = { version = "1.1", features = ["serde", "v4"] }
-zenoh = { version = "0.11.0-rc.3", features = ["unstable", "plugins"] }
-zenoh-collections = { version = "0.11.0-rc.3" }
-zenoh-core = { version = "0.11.0-rc.3" }
-zenoh-ext = { version = "0.11.0-rc.3" }
+uhlc = "0.8.0"
+url = { version = "2.5.2", features = ["serde"] }
+uuid = { version = "1.10.0", features = ["serde", "v4"] }
+zenoh = { version = "1.0.2", features = ["unstable", "plugins"] }
+zenoh-collections = { version = "1.0.2" }
+zenoh-core = { version = "1.0.2" }
+zenoh-ext = { version = "1.0.2" }
 zenoh-flow-commons = { path = "./zenoh-flow-commons" }
 zenoh-flow-daemon = { path = "./zenoh-flow-daemon" }
 zenoh-flow-descriptors = { path = "./zenoh-flow-descriptors" }
 zenoh-flow-nodes = { path = "./zenoh-flow-nodes" }
 zenoh-flow-records = { path = "./zenoh-flow-records" }
 zenoh-flow-runtime = { path = "./zenoh-flow-runtime" }
-zenoh-keyexpr = { version = "0.11.0-rc.3" }
-zenoh-plugin-trait = { version = "0.11.0-rc.3" }
-zenoh-protocol = { version = "0.11.0-rc.3" }
-zenoh-result = "0.11.0-rc.3"
-zenoh-sync = { version = "0.11.0-rc.3" }
-zenoh-util = { version = "0.11.0-rc.3" }
+zenoh-keyexpr = { version = "1.0.2" }
+zenoh-plugin-trait = { version = "1.0.2" }
+zenoh-protocol = { version = "1.0.2" }
+zenoh-result = "1.0.2"
+zenoh-sync = { version = "1.0.2" }
+zenoh-util = { version = "1.0.2" }
 
 [profile.dev]
 debug = true
